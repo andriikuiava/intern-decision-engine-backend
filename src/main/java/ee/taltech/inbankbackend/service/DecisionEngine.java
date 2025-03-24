@@ -2,11 +2,11 @@ package ee.taltech.inbankbackend.service;
 
 import com.github.vladislavgoltjajev.personalcode.locale.estonia.EstonianPersonalCodeValidator;
 import ee.taltech.inbankbackend.config.DecisionEngineConstants;
-import ee.taltech.inbankbackend.exceptions.InvalidLoanAmountException;
-import ee.taltech.inbankbackend.exceptions.InvalidLoanPeriodException;
-import ee.taltech.inbankbackend.exceptions.InvalidPersonalCodeException;
-import ee.taltech.inbankbackend.exceptions.NoValidLoanException;
+import ee.taltech.inbankbackend.exceptions.*;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.Period;
 
 /**
  * A service class that provides a method for calculating an approved loan amount and period for a customer.
@@ -35,7 +35,7 @@ public class DecisionEngine {
      */
     public Decision calculateApprovedLoan(String personalCode, Long requestedAmount, int requestedPeriod)
             throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException,
-            NoValidLoanException {
+            NoValidLoanException, InvalidAgeException {
 
         // Verify inputs
         verifyInputs(personalCode, requestedAmount, requestedPeriod);
@@ -138,25 +138,51 @@ public class DecisionEngine {
      * If inputs are invalid, then throws corresponding exceptions.
      *
      * @param personalCode Provided personal ID code
-     * @param loanAmount Requested loan amount
-     * @param loanPeriod Requested loan period
+     * @param requestedAmount Requested loan amount
+     * @param requestedPeriod Requested loan period
      * @throws InvalidPersonalCodeException If the provided personal ID code is invalid
      * @throws InvalidLoanAmountException If the requested loan amount is invalid
      * @throws InvalidLoanPeriodException If the requested loan period is invalid
      */
-    private void verifyInputs(String personalCode, Long loanAmount, int loanPeriod)
-            throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException {
+    private void verifyInputs(String personalCode, Long requestedAmount, int requestedPeriod)
+            throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException, InvalidAgeException {
+
+
+        int age = calculateAgeFromPersonalCode(personalCode);
+        int maxAllowedAge = DecisionEngineConstants.EXPECTED_LIFETIME -
+                DecisionEngineConstants.MAXIMUM_LOAN_PERIOD_YEARS;
+
+        if (age < DecisionEngineConstants.MINIMUM_AGE || age > maxAllowedAge) {
+            throw new InvalidAgeException("Customer's age is outside the allowed range!");
+        }
 
         if (!validator.isValid(personalCode)) {
-            throw new InvalidPersonalCodeException("Invalid personal ID code!");
+            throw new InvalidPersonalCodeException("Invalid personal code!");
         }
-        if (loanAmount < DecisionEngineConstants.MINIMUM_LOAN_AMOUNT
-                || loanAmount > DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT) {
+
+        if (requestedAmount < DecisionEngineConstants.MINIMUM_LOAN_AMOUNT ||
+                requestedAmount > DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT) {
             throw new InvalidLoanAmountException("Invalid loan amount!");
         }
-        if (loanPeriod < DecisionEngineConstants.MINIMUM_LOAN_PERIOD
-                || loanPeriod > DecisionEngineConstants.MAXIMUM_LOAN_PERIOD) {
+
+        if (requestedPeriod < DecisionEngineConstants.MINIMUM_LOAN_PERIOD ||
+                requestedPeriod > DecisionEngineConstants.MAXIMUM_LOAN_PERIOD) {
             throw new InvalidLoanPeriodException("Invalid loan period!");
         }
     }
+
+    private int calculateAgeFromPersonalCode(String personalCode) {
+        int century = (personalCode.charAt(0) - '0') <= 2 ? 1800 :
+                (personalCode.charAt(0) - '0') <= 4 ? 1900 : 2000;
+
+        int birthYear = century + Integer.parseInt(personalCode.substring(1, 3));
+        int birthMonth = Integer.parseInt(personalCode.substring(3, 5));
+        int birthDay = Integer.parseInt(personalCode.substring(5, 7));
+
+        LocalDate birthDate = LocalDate.of(birthYear, birthMonth, birthDay);
+        LocalDate currentDate = LocalDate.now();
+
+        return Period.between(birthDate, currentDate).getYears();
+    }
+
 }
