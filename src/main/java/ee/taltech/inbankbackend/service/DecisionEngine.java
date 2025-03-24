@@ -193,15 +193,11 @@ public class DecisionEngine {
 
 
     private int getLifeExpectancy(String country) {
-        switch (country) {
-            case "Estonia":
-                return DecisionEngineConstants.ESTONIA_EXPECTED_LIFETIME;
-            case "Latvia":
-                return DecisionEngineConstants.LATVIA_EXPECTED_LIFETIME;
-            case "Lithuania":
-                return DecisionEngineConstants.LITHUANIA_EXPECTED_LIFETIME;
-            default:
-                return DecisionEngineConstants.DEFAULT_EXPECTED_LIFETIME;
-        }
+        return switch (country) {
+            case "Estonia" -> DecisionEngineConstants.ESTONIA_EXPECTED_LIFETIME;
+            case "Latvia" -> DecisionEngineConstants.LATVIA_EXPECTED_LIFETIME;
+            case "Lithuania" -> DecisionEngineConstants.LITHUANIA_EXPECTED_LIFETIME;
+            default -> DecisionEngineConstants.DEFAULT_EXPECTED_LIFETIME;
+        };
     }
 }
