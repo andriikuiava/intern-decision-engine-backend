@@ -1,5 +1,7 @@
 package ee.taltech.inbankbackend.config;
 
+import java.util.Set;
+
 /**
  * Holds all necessary constants for the decision engine.
  */
@@ -13,6 +15,10 @@ public class DecisionEngineConstants {
     public static final Integer SEGMENT_3_CREDIT_MODIFIER = 1000;
 
     public static final int MINIMUM_AGE = 18;
-    public static final int MAXIMUM_LOAN_PERIOD_YEARS = 4;
-    public static final int EXPECTED_LIFETIME = 82;
+    public static final int DEFAULT_EXPECTED_LIFETIME = 82;
+    public static final int ESTONIA_EXPECTED_LIFETIME = 78;
+    public static final int LATVIA_EXPECTED_LIFETIME = 75;
+    public static final int LITHUANIA_EXPECTED_LIFETIME = 76;
+
+    public static final Set<String> VALID_COUNTRIES = Set.of("Estonia", "Latvia", "Lithuania");
 }

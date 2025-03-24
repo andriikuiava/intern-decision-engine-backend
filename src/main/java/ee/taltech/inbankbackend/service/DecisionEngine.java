@@ -24,18 +24,19 @@ public class DecisionEngine {
      * The loan period must be between 12 and 48 months (inclusive).
      * The loan amount must be between 2000 and 10000€ (inclusive).
      *
-     * @param personalCode ID code of the customer that made the request.
+     * @param personalCode    ID code of the customer that made the request.
      * @param requestedAmount Requested loan amount
      * @param requestedPeriod Requested loan period
+     * @param country         The country for the loan application
      * @return A Decision object containing the approved loan amount and period, and an error message (if any)
      * @throws InvalidPersonalCodeException If the provided personal ID code is invalid
-     * @throws InvalidLoanAmountException If the requested loan amount is invalid
-     * @throws InvalidLoanPeriodException If the requested loan period is invalid
-     * @throws NoValidLoanException If there is no valid loan found for the given ID code, loan amount and loan period
+     * @throws InvalidLoanAmountException   If the requested loan amount is invalid
+     * @throws InvalidLoanPeriodException   If the requested loan period is invalid
+     * @throws NoValidLoanException         If there is no valid loan found for the given ID code, loan amount and loan period
      */
-    public Decision calculateApprovedLoan(String personalCode, Long requestedAmount, int requestedPeriod)
+    public Decision calculateApprovedLoan(String personalCode, Long requestedAmount, int requestedPeriod, String country)
             throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException,
-            NoValidLoanException, InvalidAgeException {
+            NoValidLoanException, InvalidAgeException, InvalidCountryException {
 
         // Verify inputs
         verifyInputs(personalCode, requestedAmount, requestedPeriod);
@@ -43,10 +44,17 @@ public class DecisionEngine {
         // Get customer's credit modifier based on segment
         int creditModifier = getCreditModifier(personalCode);
 
+        if (!DecisionEngineConstants.VALID_COUNTRIES.contains(country)) {
+            throw new InvalidCountryException("Invalid country: " + country + ". Allowed countries are Estonia, Latvia, and Lithuania.");
+        }
+
         // If customer has debt (credit modifier = 0), no loan is possible
         if (creditModifier == 0) {
             throw new NoValidLoanException("No valid loan found due to existing debt!");
         }
+
+        //check age restrictions
+        checkAgeRestrictions(personalCode, requestedPeriod, country);
 
         // Try to find the maximum approved loan amount for the requested period
         Integer approvedAmount = findMaxApprovedAmount(creditModifier, requestedPeriod);
@@ -71,7 +79,7 @@ public class DecisionEngine {
      * A score >= 0.1 is considered approved.
      *
      * @param creditModifier The customer's credit modifier
-     * @param loanPeriod The loan period in months
+     * @param loanPeriod     The loan period in months
      * @return The maximum approved amount, or null if no valid amount exists
      */
     private Integer findMaxApprovedAmount(int creditModifier, int loanPeriod) {
@@ -94,95 +102,106 @@ public class DecisionEngine {
      * Attempts to find an alternative loan period that would allow for a valid loan.
      * Searches from the requested period up to the maximum allowed period.
      *
-     * @param creditModifier The customer's credit modifier
+     * @param creditModifier  The customer's credit modifier
      * @param requestedPeriod The initially requested loan period
      * @return A valid alternative period, or -1 if none is found
      */
     private int findAlternativePeriod(int creditModifier, int requestedPeriod) {
-        // Try increasing the period to find a valid loan
         for (int period = requestedPeriod + 1; period <= DecisionEngineConstants.MAXIMUM_LOAN_PERIOD; period++) {
-            if (findMaxApprovedAmount(creditModifier, period) != null) {
+            Integer approvedAmount = findMaxApprovedAmount(creditModifier, period);
+            if (approvedAmount != null) {
                 return period;
             }
         }
-
-        return -1; // No valid period found
+        return -1; // No alternative period found
     }
 
-    /**
-     * Calculates the credit modifier of the customer according to the last four digits of their ID code.
-     * Debt - 0000...2499
-     * Segment 1 - 2500...4999
-     * Segment 2 - 5000...7499
-     * Segment 3 - 7500...9999
-     *
-     * @param personalCode ID code of the customer that made the request.
-     * @return Credit modifier based on the customer's segment
-     */
     private int getCreditModifier(String personalCode) {
-        int segment = Integer.parseInt(personalCode.substring(personalCode.length() - 4));
+        String lastFourDigits = personalCode.substring(personalCode.length() - 4);
+        int id = Integer.parseInt(lastFourDigits);
 
-        if (segment < 2500) {
-            return 0; // Debt
-        } else if (segment < 5000) {
+        if (id <= 3000) {
             return DecisionEngineConstants.SEGMENT_1_CREDIT_MODIFIER;
-        } else if (segment < 7500) {
+        } else if (id <= 6000) {
             return DecisionEngineConstants.SEGMENT_2_CREDIT_MODIFIER;
+        } else if (id <= 9999) {
+            return DecisionEngineConstants.SEGMENT_3_CREDIT_MODIFIER;
         }
 
-        return DecisionEngineConstants.SEGMENT_3_CREDIT_MODIFIER;
+        return 0;
     }
 
-    /**
-     * Verify that all inputs are valid according to business rules.
-     * If inputs are invalid, then throws corresponding exceptions.
-     *
-     * @param personalCode Provided personal ID code
-     * @param requestedAmount Requested loan amount
-     * @param requestedPeriod Requested loan period
-     * @throws InvalidPersonalCodeException If the provided personal ID code is invalid
-     * @throws InvalidLoanAmountException If the requested loan amount is invalid
-     * @throws InvalidLoanPeriodException If the requested loan period is invalid
-     */
-    private void verifyInputs(String personalCode, Long requestedAmount, int requestedPeriod)
-            throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException, InvalidAgeException {
-
-
-        int age = calculateAgeFromPersonalCode(personalCode);
-        int maxAllowedAge = DecisionEngineConstants.EXPECTED_LIFETIME -
-                DecisionEngineConstants.MAXIMUM_LOAN_PERIOD_YEARS;
-
-        if (age < DecisionEngineConstants.MINIMUM_AGE || age > maxAllowedAge) {
-            throw new InvalidAgeException("Customer's age is outside the allowed range!");
-        }
-
+    private void verifyInputs(String personalCode, Long loanAmount, int loanPeriod)
+            throws InvalidPersonalCodeException, InvalidLoanAmountException, InvalidLoanPeriodException {
         if (!validator.isValid(personalCode)) {
-            throw new InvalidPersonalCodeException("Invalid personal code!");
+            throw new InvalidPersonalCodeException("Invalid personal ID code!");
         }
 
-        if (requestedAmount < DecisionEngineConstants.MINIMUM_LOAN_AMOUNT ||
-                requestedAmount > DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT) {
-            throw new InvalidLoanAmountException("Invalid loan amount!");
+        if (loanAmount < DecisionEngineConstants.MINIMUM_LOAN_AMOUNT ||
+                loanAmount > DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT) {
+            throw new InvalidLoanAmountException(
+                    "Invalid loan amount! Loan amount must be between " + DecisionEngineConstants.MINIMUM_LOAN_AMOUNT +
+                            " and " + DecisionEngineConstants.MAXIMUM_LOAN_AMOUNT + "€");
         }
 
-        if (requestedPeriod < DecisionEngineConstants.MINIMUM_LOAN_PERIOD ||
-                requestedPeriod > DecisionEngineConstants.MAXIMUM_LOAN_PERIOD) {
-            throw new InvalidLoanPeriodException("Invalid loan period!");
+        if (loanPeriod < DecisionEngineConstants.MINIMUM_LOAN_PERIOD ||
+                loanPeriod > DecisionEngineConstants.MAXIMUM_LOAN_PERIOD) {
+            throw new InvalidLoanPeriodException(
+                    "Invalid loan period! Loan period must be between " + DecisionEngineConstants.MINIMUM_LOAN_PERIOD +
+                            " and " + DecisionEngineConstants.MAXIMUM_LOAN_PERIOD + " months");
         }
     }
 
-    private int calculateAgeFromPersonalCode(String personalCode) {
-        int century = (personalCode.charAt(0) - '0') <= 2 ? 1800 :
-                (personalCode.charAt(0) - '0') <= 4 ? 1900 : 2000;
-
-        int birthYear = century + Integer.parseInt(personalCode.substring(1, 3));
-        int birthMonth = Integer.parseInt(personalCode.substring(3, 5));
-        int birthDay = Integer.parseInt(personalCode.substring(5, 7));
-
-        LocalDate birthDate = LocalDate.of(birthYear, birthMonth, birthDay);
+    private void checkAgeRestrictions(String personalCode, int loanPeriod, String country) throws InvalidAgeException {
+        // Extract birth date from personal code
+        LocalDate birthDate = extractBirthDate(personalCode);
         LocalDate currentDate = LocalDate.now();
+        int age = Period.between(birthDate, currentDate).getYears();
 
-        return Period.between(birthDate, currentDate).getYears();
+        if (age < DecisionEngineConstants.MINIMUM_AGE) {
+            throw new InvalidAgeException("Customer is underage and cannot receive a loan.");
+        }
+
+        // Get life expectancy for the country
+        int lifeExpectancy = getLifeExpectancy(country);
+
+        int maxAcceptableAge = lifeExpectancy - (loanPeriod / 12);
+
+        if (age > maxAcceptableAge) {
+            throw new InvalidAgeException("Customer is too old to receive a loan for this period.");
+        }
     }
 
+    private LocalDate extractBirthDate(String personalCode) {
+        int yearPrefix;
+        int year = Integer.parseInt(personalCode.substring(1, 3));
+        int month = Integer.parseInt(personalCode.substring(3, 5));
+        int day = Integer.parseInt(personalCode.substring(5, 7));
+        int genderDigit = Character.getNumericValue(personalCode.charAt(0));
+
+        if (genderDigit == 3 || genderDigit == 4) {
+            yearPrefix = 19;
+        } else if (genderDigit == 5 || genderDigit == 6) {
+            yearPrefix = 20;
+        } else {
+            yearPrefix = 18;
+        }
+
+        year = year + yearPrefix * 100;
+        return LocalDate.of(year, month, day);
+    }
+
+
+    private int getLifeExpectancy(String country) {
+        switch (country) {
+            case "Estonia":
+                return DecisionEngineConstants.ESTONIA_EXPECTED_LIFETIME;
+            case "Latvia":
+                return DecisionEngineConstants.LATVIA_EXPECTED_LIFETIME;
+            case "Lithuania":
+                return DecisionEngineConstants.LITHUANIA_EXPECTED_LIFETIME;
+            default:
+                return DecisionEngineConstants.DEFAULT_EXPECTED_LIFETIME;
+        }
+    }
 }
